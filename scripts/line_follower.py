@@ -31,6 +31,7 @@ RANDOM_ACTION_DURATION = rospy.Duration(0.5)
 MOTOR_NEUTRAL = 1500
 ESC_SERVO = 1
 STEER_SERVO = 0
+STEER_NEUTRAL = 90
 
 # how to write to the controller
 #self.controller.setAngle(STEER_SERVO, steering)
@@ -45,42 +46,29 @@ class Controller:
 
         # initialize rospy
         rospy.init_node('line_follower')
-
         self.controller = vc.ServoController()
-
         
         # set up publisher for commanded velocity
         self.throttle = rospy.Publisher('/mobile_base/commands/throttle',
                                            Int32)
         
         # start out in wandering state
-        self.state = 'wander'
+        self.state = 'start'
 
         # pick out a random action to do when we start driving
-        self.start_straight()
-
-        # we will stop driving if picked up or about to drive off edge
-        # of something
-        self.cliff_alert = 0
+        #self.start_straight()
 
         # subscribe to the joystick for the killswitch
         rospy.Subscriber('odroid/commands/combined',
                          IntList, self.motor_callback)
         
-        '''
-        # set up subscriber for sensor state for bumpers/cliffs
-        rospy.Subscriber('/mobile_base/sensors/core',
-                         SensorState, self.sensor_callback)
-        '''
         # subscribe to blobfinder messages
         rospy.Subscriber('blobfinder/blue_tape/blobs',
                             MultiBlobInfo, self.blob_callback)
 
         # set up control timer at 100 Hz
-        rospy.Timer(CONTROL_PERIOD, self.control_callback)
+        #rospy.Timer(CONTROL_PERIOD, self.control_callback)
 
-        # set up timer for random actions at 2 hz
-        #rospy.Timer(RANDOM_ACTION_DURATION, self.pick_random_action)
 ############################################################
 ###########################################################
     # "called when joystick messages come in"
@@ -95,10 +83,12 @@ class Controller:
             self.controller.setAngle(STEER_SERVO, 90)
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL
                                         + 0*throttle)
-            rospy.signal_shutdown("Killswitch")
+            self.state = 'killswitch'
+        else:
+            self.controller.setAngle(STEER_SERVO, steering)
+            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*throttle)
     
     def blob_callback(self, data):
-
         num = len(data.blobs)
         rospy.loginfo('got a message with %d blobs', num)
         maxes = []
@@ -125,17 +115,19 @@ class Controller:
 
             # with maxblob, now calculate direction
             numBlob = maxes.index(max(maxes))
-            kp = 0.01
-            theta = kp*(320 - data.blobs[numBlob].cx)
+            screen_width = 600
+            steer_range = 180
+            #kp = 0.01
+            #theta = kp*(320 - data.blobs[numBlob].cx)
+            blob_ratio = data.blobs[numBlob].cx/screen_width
+            steering = blob_ratio*steer_range
+            steering = steer_range - steering
             #self.wander_action.angular.z = theta
-            steering = math.ceil(abs(theta*90))
-            self.controller.setAngle(STEER_SERVO, int(steering)) 
-            print 'theta is:', theta
-            print 'steering is:',int(steering)
-
+            steering = int(math.ceil(steering))
+            self.controller.setAngle(STEER_SERVO, steering) 
             rospy.loginfo('blob number: %d',numBlob)
             rospy.loginfo('blob x coordinate: %d',data.blobs[numBlob].cx)
-            rospy.loginfo('turn at rate: %d', theta)
+            rospy.loginfo('turn at rate: %d', steering)
             
     # called when no blobs appear 
     def look_for_line(self, timer_event = None):
@@ -149,69 +141,43 @@ class Controller:
             # reset in two seconds to finish state
             rospy.Timer(SEARCH_DURATION, self.look_for_line, oneshot=True)
 
-        # if already searching, reset to wander
+        # if already searching, reset to starting state
         else:  
             rospy.loginfo('exit')
-            self.state = 'wander'
-
-    '''
-    # called whenever sensor messages are received
-    def sensor_callback(self, msg):
-
-        # set cliff alert
-        self.cliff_alert = msg.cliff
-
-        # ignore bumper if we are already reacting to it
-        if self.state in ['backward', 'turn_left', 'turn_right']:
-            return
-
-        # see what we should do next
-        next_state = None
-
-        if msg.bumper & SensorState.BUMPER_CENTRE:
-            next_state = 'backward'
-        elif msg.bumper & SensorState.BUMPER_LEFT:
-            next_state = 'turn_right'
-        elif msg.bumper & SensorState.BUMPER_RIGHT:
-            next_state = 'turn_left'
-
-        # if bumped, go to next state
-        if next_state is not None:
-            
-            self.state = next_state
-
-            # in 1 second, finish this state. waits 1 second, then callback
-            rospy.Timer(BUMPER_DURATION, self.bumper_done, oneshot=True)
-
-
-    # called when we are done with a bumper reaction
-    def bumper_done(self, timer_event=None):
-
-        # if we just backed up, time to turn
-        if self.state == 'backward':
-            
-            # go to turning state
-            self.state = 'turn_left'
-            # reset again in a second
-            rospy.Timer(BUMPER_DURATION, self.bumper_done, oneshot=True)
-                        
-        else: # we just turned, so go return to wandering
-            
-            self.state = 'wander'
-    '''
+            self.state = 'start'
     
     # called when it's time to choose a new random wander direction
     def start_straight(self, timer_event=None):
+        '''
         # goes fwd
         #self.wander_action = Twist()
         #self.wander_action.linear.x = 0.2
-        self.controller.setAngle(STEER_SERVO, 90) # 90 is staying straight
+        self.controller.setAngle(STEER_SERVO, STEER_NEUTRAL)
         self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*45) 
         #self.wander_action.angular.z = random.uniform(-1.0, 1.0)
+        '''
     
     # called 100 times per second
     def control_callback(self, timer_event=None):
-
+        if self.state == 'start':
+            thr = 30
+            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*thr)
+        elif self.state == 'killswitch':
+            self.controller.setAngle(STEER_SERVO, 90)
+            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL)
+            rospy.loginfo('killswitch is engaged. shutting down')
+            rospy.signal_shutdown("Killswitch")
+        elif self.state == 'walkout':
+            self.controller.setAngle(STEER_SERVO, STEER_NEUTRAL)
+            self.controller.setPostition(ESC_SERVO, MOTOR_NEUTRAL)
+            rospy.loginfo('walking out for a bit')
+        elif self.state == 'search':
+            search_angle = 45
+            search_thr = 30
+            self.controller.setAngle(STEER_SERVO, search_angle)
+            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL
+                                        + 2*search_thr)
+        '''
         # initialize commanded vel to 0, 0
         #cmd_vel = Twist()
 
@@ -244,12 +210,10 @@ class Controller:
                 #cmd_vel = self.wander_action
                 thr = p_thr + 10
                 self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*thr)
-
-        self.throttle.publish(thr)
+            '''
         
     # called by main function below (after init)
     def run(self):
-        
         # timers and callbacks are already set up, so just spin.
         # if spin returns we were interrupted by Ctrl+C or shutdown
         rospy.spin()
