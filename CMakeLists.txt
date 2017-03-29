@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(project1)
+project(line_following)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -7,7 +7,7 @@ project(project1)
 find_package(catkin REQUIRED COMPONENTS
   blobfinder
   geometry_msgs
-  kobuki_msgs
+  #kobuki_msgs
   rospy
   std_msgs
 )
