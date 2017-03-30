@@ -12,8 +12,8 @@ from std_msgs.msg import Float64, Int32, Int32MultiArray
 from joy_test.msg import IntList
 from blobfinder.msg import MultiBlobInfo
 
-# control at 100Hz
-CONTROL_PERIOD = rospy.Duration(0.01)
+# control at 10Hz
+CONTROL_PERIOD = rospy.Duration(0.5)
 
 # react to bumpers for 1 second
 BUMPER_DURATION = rospy.Duration(1.0)
@@ -67,7 +67,7 @@ class Controller:
                             MultiBlobInfo, self.blob_callback)
 
         # set up control timer at 100 Hz
-        #rospy.Timer(CONTROL_PERIOD, self.control_callback)
+        rospy.Timer(CONTROL_PERIOD, self.control_callback)
 
 ############################################################
 ###########################################################
@@ -84,9 +84,9 @@ class Controller:
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL
                                         + 0*throttle)
             self.state = 'killswitch'
-        else:
-            self.controller.setAngle(STEER_SERVO, steering)
-            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*throttle)
+        #else:
+            #self.controller.setAngle(STEER_SERVO, steering)
+            #self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*throttle)
     
     def blob_callback(self, data):
         num = len(data.blobs)
@@ -94,10 +94,12 @@ class Controller:
         maxes = []
         numBlob = 0
         for i in range(num):
+            '''
             rospy.loginfo('  blob with area %f at (%f, %f)', 
                           data.blobs[i].area,
                           data.blobs[i].cx,
                           data.blobs[i].cy)
+            '''
             # blob data reported here.
             # take one with largest area
             maxes.append(data.blobs[i].area)
@@ -109,13 +111,13 @@ class Controller:
 
         if (num == 0) or (maxBlob < 40):
             # enter walkout state, callback in 1 second
-            self.state = 'walkout'
+            #self.state = 'walkout'
             rospy.Timer(WAIT_DURATION, self.look_for_line, oneshot=True)
         else:
 
             # with maxblob, now calculate direction
             numBlob = maxes.index(max(maxes))
-            screen_width = 600
+            screen_width = 640
             steer_range = 180
             #kp = 0.01
             #theta = kp*(320 - data.blobs[numBlob].cx)
@@ -131,7 +133,6 @@ class Controller:
             
     # called when no blobs appear 
     def look_for_line(self, timer_event = None):
-
         rospy.loginfo('look_for_line called')
 
         # if there are no blobs, enter search state, reset
@@ -157,26 +158,30 @@ class Controller:
         #self.wander_action.angular.z = random.uniform(-1.0, 1.0)
         '''
     
-    # called 100 times per second
+    # called 10 times per second
     def control_callback(self, timer_event=None):
         if self.state == 'start':
+            rospy.loginfo('state: start')
             thr = 30
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*thr)
         elif self.state == 'killswitch':
+            rospy.loginfo('state: kill')
             self.controller.setAngle(STEER_SERVO, 90)
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL)
             rospy.loginfo('killswitch is engaged. shutting down')
             rospy.signal_shutdown("Killswitch")
         elif self.state == 'walkout':
+            rospy.loginfo('state: walkout')
             self.controller.setAngle(STEER_SERVO, STEER_NEUTRAL)
-            self.controller.setPostition(ESC_SERVO, MOTOR_NEUTRAL)
+            #self.controller.setPostition(ESC_SERVO, MOTOR_NEUTRAL)
             rospy.loginfo('walking out for a bit')
         elif self.state == 'search':
+            rospy.loginfo('state: search')
             search_angle = 45
             search_thr = 30
             self.controller.setAngle(STEER_SERVO, search_angle)
-            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL
-                                        + 2*search_thr)
+            #self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL
+                                        #+ 2*search_thr)
         '''
         # initialize commanded vel to 0, 0
         #cmd_vel = Twist()
