@@ -7,7 +7,6 @@ import servotest as vc
 import math
 
 #from geometry_msgs.msg import Twist
-# this is a test
 #from kobuki_msgs.msg import SensorState
 from std_msgs.msg import Float64, Int32, Int32MultiArray
 from joy_test.msg import IntList
