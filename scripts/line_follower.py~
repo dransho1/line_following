@@ -12,8 +12,8 @@ from std_msgs.msg import Float64, Int32, Int32MultiArray
 from joy_test.msg import IntList
 from blobfinder.msg import MultiBlobInfo
 
-# control at 100Hz
-CONTROL_PERIOD = rospy.Duration(0.01)
+# control at 10Hz
+CONTROL_PERIOD = rospy.Duration(0.1)
 
 # react to bumpers for 1 second
 BUMPER_DURATION = rospy.Duration(1.0)
@@ -21,7 +21,7 @@ BUMPER_DURATION = rospy.Duration(1.0)
 # search duration of 1 second
 SEARCH_DURATION = rospy.Duration(1.5)
 
-# wait duration of 2 seconds
+# wait duration of 1 seconds
 WAIT_DURATION = rospy.Duration(1.0)
 
 # random actions should last 0.5 second
@@ -55,6 +55,12 @@ class Controller:
         # start out in wandering state
         self.state = 'start'
 
+        # set up a killswitch
+        self.kill = 0
+
+        # set up a searching cue
+        self.search = 0
+
         # pick out a random action to do when we start driving
         #self.start_straight()
 
@@ -67,7 +73,7 @@ class Controller:
                             MultiBlobInfo, self.blob_callback)
 
         # set up control timer at 100 Hz
-        #rospy.Timer(CONTROL_PERIOD, self.control_callback)
+        rospy.Timer(CONTROL_PERIOD, self.control_callback)
 
 ############################################################
 ###########################################################
@@ -83,10 +89,11 @@ class Controller:
             self.controller.setAngle(STEER_SERVO, 90)
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL
                                         + 0*throttle)
-            self.state = 'killswitch'
-        else:
-            self.controller.setAngle(STEER_SERVO, steering)
-            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*throttle)
+            self.state = 'walkout'
+            self.kill = 1
+        #else:
+            #self.controller.setAngle(STEER_SERVO, steering)
+            #self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*throttle)
     
     def blob_callback(self, data):
         num = len(data.blobs)
@@ -94,10 +101,12 @@ class Controller:
         maxes = []
         numBlob = 0
         for i in range(num):
+            '''
             rospy.loginfo('  blob with area %f at (%f, %f)', 
                           data.blobs[i].area,
                           data.blobs[i].cx,
                           data.blobs[i].cy)
+            '''
             # blob data reported here.
             # take one with largest area
             maxes.append(data.blobs[i].area)
@@ -107,15 +116,21 @@ class Controller:
         # should wait certain duration before calling Timer, and after
         # waiting, then it can check if number of blobs are still zero 
 
-        if (num == 0) or (maxBlob < 40):
+        if (num == 0) or (maxBlob < 60):
             # enter walkout state, callback in 1 second
             self.state = 'walkout'
-            rospy.Timer(WAIT_DURATION, self.look_for_line, oneshot=True)
+            # walkout for two seconds before next function called
+            rospy.loginfo('walk sleep')
+            rospy.sleep(1.0) # wait a second for walkout state
+            rospy.loginfo('after walking. enter search state')
+            self.search = 1
+            rospy.sleep(2.0) # search for two seconds
+            #rospy.Timer(WAIT_DURATION, self.look_for_line, oneshot=True)
         else:
-
+            self.state = 'following'
             # with maxblob, now calculate direction
             numBlob = maxes.index(max(maxes))
-            screen_width = 600
+            screen_width = 640
             steer_range = 180
             #kp = 0.01
             #theta = kp*(320 - data.blobs[numBlob].cx)
@@ -129,88 +144,53 @@ class Controller:
             rospy.loginfo('blob x coordinate: %d',data.blobs[numBlob].cx)
             rospy.loginfo('turn at rate: %d', steering)
             
-    # called when no blobs appear 
+    # called when no blobs appear, after 2 second delay
     def look_for_line(self, timer_event = None):
-
         rospy.loginfo('look_for_line called')
-
-        # if there are no blobs, enter search state, reset
-        if self.state == 'walkout':
-            rospy.loginfo('exit walkout state')
-            self.state = 'search'
+        if self.search == 0:
+            self.search = 1
+            rospy.loginfo('set search to true')
+            # since there are no blobs, enter search state
             # reset in two seconds to finish state
             rospy.Timer(SEARCH_DURATION, self.look_for_line, oneshot=True)
-
-        # if already searching, reset to starting state
-        else:  
-            rospy.loginfo('exit')
-            self.state = 'start'
+        else:
+            rospy.loginfo('search is completed')
+            self.search = 0
     
-    # called when it's time to choose a new random wander direction
-    def start_straight(self, timer_event=None):
-        '''
-        # goes fwd
-        #self.wander_action = Twist()
-        #self.wander_action.linear.x = 0.2
-        self.controller.setAngle(STEER_SERVO, STEER_NEUTRAL)
-        self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*45) 
-        #self.wander_action.angular.z = random.uniform(-1.0, 1.0)
-        '''
-    
-    # called 100 times per second
+    # called 10 times per second
     def control_callback(self, timer_event=None):
-        if self.state == 'start':
-            thr = 30
-            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*thr)
-        elif self.state == 'killswitch':
-            self.controller.setAngle(STEER_SERVO, 90)
+        if self.kill == 1:
+            rospy.loginfo('state: kill')
+            self.controller.setAngle(STEER_SERVO, STEER_NEUTRAL)
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL)
             rospy.loginfo('killswitch is engaged. shutting down')
             rospy.signal_shutdown("Killswitch")
+
+        if self.state == 'start':
+            rospy.loginfo('state: start')
+            thr = 40
+            self.controller.setAngle(STEER_SERVO, STEER_NEUTRAL)
+            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL +
+                                        int(math.ceil(1.5*thr)))
+        elif self.state == 'search':
+            rospy.loginfo('searching')
+            search_angle = 45
+            search_thr = 40
+            self.controller.setAngle(STEER_SERVO, search_angle)
+            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL
+                                        + int(math.ceil(1.5*search_thr)))
+        elif self.state == 'following':
+            rospy.loginfo('state: following')
+            thr = 40
+            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL +
+                                        int(math.ceil(1.5*thr)))
+            rospy.loginfo('throttle is: %d',thr)
         elif self.state == 'walkout':
+            rospy.loginfo('state: control callback walkout')
             self.controller.setAngle(STEER_SERVO, STEER_NEUTRAL)
             self.controller.setPostition(ESC_SERVO, MOTOR_NEUTRAL)
             rospy.loginfo('walking out for a bit')
-        elif self.state == 'search':
-            search_angle = 45
-            search_thr = 30
-            self.controller.setAngle(STEER_SERVO, search_angle)
-            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL
-                                        + 2*search_thr)
-        '''
-        # initialize commanded vel to 0, 0
-        #cmd_vel = Twist()
 
-        # only set commanded velocity to non-zero if not picked up:
-        if not self.cliff_alert:
-            p_thr = 30
-            n_thr = -45
-
-            # state maps straightforwardly to command
-            if self.state == 'backward':
-                #cmd_vel.linear.x = -0.3
-                thr = n_thr
-                self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*thr)
-            elif self.state == 'turn_left':
-                #cmd_vel.angular.z = 1.5
-                self.controller.setAngle(STEER_SERVO, 45)
-            elif self.state == 'turn_right':
-                #cmd_vel.angular.z = -1.5
-                self.controller.setAngle(STEER_SERVO, 135)
-                
-            # need to change the search state!!
-            elif self.state == 'search':
-                #cmd_vel.angular.z = 0.2
-                self.controller.setAngle(STEER_SERVO, 45)
-            elif self.state == 'walkout':
-                #cmd_vel.angular.x = 0.15
-                thr = p_thr
-                self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*thr)
-            else: # forward
-                #cmd_vel = self.wander_action
-                thr = p_thr + 10
-                self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL + 2*thr)
-            '''
         
     # called by main function below (after init)
     def run(self):
@@ -218,12 +198,11 @@ class Controller:
         # if spin returns we were interrupted by Ctrl+C or shutdown
         rospy.spin()
 
-
 # main function
 if __name__ == '__main__':
     try:
         ctrl = Controller()
         ctrl.run()
-    except rospy.ROSInterruptException:
+    except rospy.is_shutdown():
         pass
     
