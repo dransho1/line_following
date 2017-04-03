@@ -21,7 +21,7 @@ BUMPER_DURATION = rospy.Duration(1.0)
 # search duration of 1 second
 SEARCH_DURATION = rospy.Duration(1.5)
 
-# wait duration of 1 seconds
+# go into line_wait of 1 second
 WAIT_DURATION = rospy.Duration(1.0)
 
 # random actions should last 0.5 second
@@ -117,15 +117,23 @@ class Controller:
         # waiting, then it can check if number of blobs are still zero 
 
         if (num == 0) or (maxBlob < 60):
-            # enter walkout state, callback in 1 second
-            self.state = 'walkout'
-            # walkout for two seconds before next function called
-            rospy.loginfo('walk sleep')
-            rospy.sleep(1.0) # wait a second for walkout state
-            rospy.loginfo('after walking. enter search state')
-            self.state = 'search'
-            rospy.sleep(2.0) # search for two seconds
-            #rospy.Timer(WAIT_DURATION, self.look_for_line, oneshot=True)
+            if self.state == 'walkout':
+                # enter walkout state, callback in 1 second
+                #self.state = 'walkout'
+                # walkout for two seconds before next function called
+                #rospy.loginfo('walk sleep')
+                #rospy.sleep(1.0) # wait a second for walkout state
+                #rospy.loginfo('after walking. enter search state')
+                #self.state = 'search'
+                #rospy.sleep(1.0) # wait for one second
+                rospy.loginfo('look_for_line called')
+                rospy.Timer(WAIT_DURATION, self.look_for_line, oneshot=True)
+                # timer does work, its just called non-stop
+                # we need to call the function and have it run for a set
+                # amount of time without us changing state or anything
+            else:
+                self.state = 'walkout'
+                rospy.loginfo('set walkout')
         else:
             self.state = 'following'
             # with maxblob, now calculate direction
@@ -144,18 +152,12 @@ class Controller:
             rospy.loginfo('blob x coordinate: %d',data.blobs[numBlob].cx)
             rospy.loginfo('turn at rate: %d', steering)
             
-    # called when no blobs appear, after 2 second delay
+    # called for 2 seconds when blobs not found
     def look_for_line(self, timer_event = None):
-        rospy.loginfo('look_for_line called')
-        if self.search == 0:
-            self.search = 1
-            rospy.loginfo('set search to true')
-            # since there are no blobs, enter search state
-            # reset in two seconds to finish state
-            rospy.Timer(SEARCH_DURATION, self.look_for_line, oneshot=True)
-        else:
-            rospy.loginfo('search is completed')
-            self.search = 0
+        rospy.loginfo('look_for_line runs')
+        self.state = 'search'
+        rospy.loginfo('set search to true')
+        #rospy.Timer(SEARCH_DURATION, self.look_for_line, oneshot=True)
     
     # called 10 times per second
     def control_callback(self, timer_event=None):
@@ -188,7 +190,7 @@ class Controller:
         elif self.state == 'walkout':
             rospy.loginfo('state: control callback walkout')
             self.controller.setAngle(STEER_SERVO, STEER_NEUTRAL)
-            self.controller.setPostition(ESC_SERVO, MOTOR_NEUTRAL)
+            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL)
             rospy.loginfo('walking out for a bit')
 
         
