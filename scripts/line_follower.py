@@ -99,7 +99,9 @@ class Controller:
         num = len(data.blobs)
         rospy.loginfo('got a message with %d blobs', num)
         maxes = []
+        max_y = []
         numBlob = 0
+        screen_width = 480
         for i in range(num):
             '''
             rospy.loginfo('  blob with area %f at (%f, %f)', 
@@ -111,30 +113,17 @@ class Controller:
             # take one with largest area
             maxes.append(data.blobs[i].area)
             maxBlob = max(maxes)
+            max_y.append(data.blobs[i].cy)
+            maxY = max(max_y)
 
         # when no blobs appear, enter look_for_line callback
         # should wait certain duration before calling Timer, and after
         # waiting, then it can check if number of blobs are still zero 
-
+        
         if (num == 0) or (maxBlob < 60):
-            if self.state == 'walkout':
-                # enter walkout state, callback in 1 second
-                #self.state = 'walkout'
-                # walkout for two seconds before next function called
-                #rospy.loginfo('walk sleep')
-                #rospy.sleep(1.0) # wait a second for walkout state
-                #rospy.loginfo('after walking. enter search state')
-                #self.state = 'search'
-                #rospy.sleep(1.0) # wait for one second
-                rospy.loginfo('look_for_line called')
-                rospy.Timer(WAIT_DURATION, self.look_for_line, oneshot=True)
-                # timer does work, its just called non-stop
-                # we need to call the function and have it run for a set
-                # amount of time without us changing state or anything
-            else:
-                self.state = 'walkout'
-                rospy.loginfo('set walkout')
-        else:
+            self.state = 'search'
+            rospy.loginfo('searching')
+        elif maxY > int(screen_width/3):
             self.state = 'following'
             # with maxblob, now calculate direction
             numBlob = maxes.index(max(maxes))
@@ -145,12 +134,13 @@ class Controller:
             blob_ratio = data.blobs[numBlob].cx/screen_width
             steering = blob_ratio*steer_range
             steering = steer_range - steering
-            #self.wander_action.angular.z = theta
             steering = int(math.ceil(steering))
             self.controller.setAngle(STEER_SERVO, steering) 
             rospy.loginfo('blob number: %d',numBlob)
             rospy.loginfo('blob x coordinate: %d',data.blobs[numBlob].cx)
             rospy.loginfo('turn at rate: %d', steering)
+        else:
+            self.state = 'search'
             
     # called for 2 seconds when blobs not found
     def look_for_line(self, timer_event = None):
@@ -175,8 +165,8 @@ class Controller:
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL +
                                         int(math.ceil(1.5*thr)))
         elif self.state == 'search':
-            rospy.loginfo('searching')
-            search_angle = 45
+            rospy.loginfo('control search')
+            search_angle = 0
             search_thr = 40
             self.controller.setAngle(STEER_SERVO, search_angle)
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL
@@ -187,11 +177,6 @@ class Controller:
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL +
                                         int(math.ceil(1.5*thr)))
             rospy.loginfo('throttle is: %d',thr)
-        elif self.state == 'walkout':
-            rospy.loginfo('state: control callback walkout')
-            self.controller.setAngle(STEER_SERVO, STEER_NEUTRAL)
-            self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL)
-            rospy.loginfo('walking out for a bit')
 
         
     # called by main function below (after init)
