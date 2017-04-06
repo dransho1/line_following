@@ -120,10 +120,10 @@ class Controller:
         # should wait certain duration before calling Timer, and after
         # waiting, then it can check if number of blobs are still zero 
         
-        if (num == 0) or (maxBlob < 60):
+        if (num == 0) or (maxBlob < 60) or (maxY < int(screen_width/3)):
             self.state = 'search'
             rospy.loginfo('searching')
-        elif maxY > int(screen_width/3):
+        else:
             self.state = 'following'
             # with maxblob, now calculate direction
             numBlob = maxes.index(max(maxes))
@@ -139,8 +139,6 @@ class Controller:
             rospy.loginfo('blob number: %d',numBlob)
             rospy.loginfo('blob x coordinate: %d',data.blobs[numBlob].cx)
             rospy.loginfo('turn at rate: %d', steering)
-        else:
-            self.state = 'search'
             
     # called for 2 seconds when blobs not found
     def look_for_line(self, timer_event = None):
@@ -173,7 +171,7 @@ class Controller:
                                         + int(math.ceil(1.5*search_thr)))
         elif self.state == 'following':
             rospy.loginfo('state: following')
-            thr = 40
+            thr = 45
             self.controller.setPosition(ESC_SERVO, MOTOR_NEUTRAL +
                                         int(math.ceil(1.5*thr)))
             rospy.loginfo('throttle is: %d',thr)
