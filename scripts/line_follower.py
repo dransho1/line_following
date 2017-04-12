@@ -8,7 +8,6 @@ import math
 import numpy as np
 
 #from geometry_msgs.msg import Twist
-#from kobuki_msgs.msg import SensorState
 from std_msgs.msg import Float64, Int32, Int32MultiArray
 from joy_test.msg import IntList
 from blobfinder.msg import MultiBlobInfo
@@ -137,7 +136,6 @@ class Controller:
                           data.blobs[i].cx,
                           data.blobs[i].cy)
             '''
-            # blob data reported here.
             # take one with largest area
             maxes.append(data.blobs[i].area)
             maxBlob = max(maxes)
@@ -158,8 +156,6 @@ class Controller:
             numBlob = maxes.index(max(maxes))
             screen_width = 640
             steer_range = 180
-            #kp = 0.01
-            #theta = kp*(320 - data.blobs[numBlob].cx)
             blob_ratio = data.blobs[numBlob].cx/screen_width
             steering = blob_ratio*steer_range
             steering = steer_range - steering
@@ -170,13 +166,6 @@ class Controller:
             rospy.loginfo('blob number: %d',numBlob)
             rospy.loginfo('blob x coordinate: %d',data.blobs[numBlob].cx)
             rospy.loginfo('turn at rate: %d', steering)
-            
-    # called for 2 seconds when blobs not found
-    def look_for_line(self, timer_event = None):
-        rospy.loginfo('look_for_line runs')
-        self.state = 'search'
-        rospy.loginfo('set search to true')
-        #rospy.Timer(SEARCH_DURATION, self.look_for_line, oneshot=True)
     
     # called 10 times per second
     def control_callback(self, timer_event=None):
